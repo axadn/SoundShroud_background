@@ -1,0 +1,19 @@
+{
+  "name": "soundshroud_background",
+  "version": "1.0.0",
+  "description": "a background worker for SoundShroud",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/axadn/SoundShroud_background.git"
+  },
+  "author": "Adan Marrufo",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/axadn/SoundShroud_background/issues"
+  },
+  "homepage": "https://github.com/axadn/SoundShroud_background#readme"
+}
