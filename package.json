@@ -15,5 +15,10 @@
   "bugs": {
     "url": "https://github.com/axadn/SoundShroud_background/issues"
   },
-  "homepage": "https://github.com/axadn/SoundShroud_background#readme"
+  "homepage": "https://github.com/axadn/SoundShroud_background#readme",
+  "dependencies": {
+    "pg": "^7.4.1",
+    "sox-stream": "^2.0.1",
+    "wav": "^1.0.1"
+  }
 }
