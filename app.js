@@ -140,7 +140,6 @@ class PreviewGenerator extends stream.Transform{
             if(this._sample > this._maxAmplitude){
                 this._sample = -1 *(this._twoComplement - this._sample);
             }
-            console.log(this._sample / this._maxAmplitude);
             this._windowMax = Math.max(this._windowMax, this._sample);
             this._byteNumber = 0;
             this._sample = 0;
