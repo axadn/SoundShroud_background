@@ -55,7 +55,7 @@ class PreviewGenerator extends stream.Transform{
         this._numChannels = options.numChannels;
         this._numBytes = options.numBytes;
         this._bytesPerSample = options.bytesPerSample;
-        this._resolution = 200;
+        this._resolution = PREVIEW_RESOLUTION;
         this._windowResolution = 8;
 
         this._windows = Array(this._windowResolution);
@@ -105,7 +105,7 @@ class PreviewGenerator extends stream.Transform{
                 processedHeader[this._header[i].name] = this._header[i];
             }
             this._header = processedHeader;
-            this._samplesPerWindow = Math.ceil(
+            this._samplesPerWindow = Math.floor(
                 this._header.dataLength.data / this._header.blockAlign.data /
                 this._header.numChannels.data / this._resolution /
                  this._windowResolution);
