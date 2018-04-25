@@ -1,10 +1,14 @@
 const fs = require('fs');
 const http = require('http');
+const AWS = require('aws-sdk');
 const wav = require('wav');
 const {Pool} = require('pg');
 const stream = require('stream');
 const sox = require('sox-stream');
 const PREVIEW_RESOLUTION = 64;
+const POLL_FREQUENCY = 5000;
+
+start(); 
 
 async function start(){
     const secrets = fs.readFileSync('./secrets.config','utf8');
@@ -14,20 +18,13 @@ async function start(){
             process.env[pair[0]] = pair[1];
         });
     }
-
-    const pool = await new Pool();
-
-    http.createServer(async (req, res)=>{
-        let buffer = fs.readFileSync('sample.wav');
-        generate_waveform(buffer);
-        res.end("done");
-    }).listen(3000);
-    console.log('listening on port 3000');
+    setInterval(poll, POLL_FREQUENCY);
 }
 
-function processAudio(trackId){
-
+async function poll(){
+    
 }
+
 /* Converting Audio / Generating a Preview:
  * 
  * we will pipe the streams around like so:
@@ -40,7 +37,55 @@ function processAudio(trackId){
  * we don't have to hold the whole file in memory at once
  * 
  */
-//A class that buffers bytes and generates a preview from them as they are streamed in
+async function processAudio(temporaryFilename, trackId){
+    const pool = await new Pool();
+    const S3 = new AWS.S3({
+        accessKeyId: process.env.S3_ID,
+        secretAccessKey: process.env.S3_KEY
+    });
+    const inputStream = S3.getObject({
+        Bucket: process.env.S3_BUCKET,
+        key: `tracks/temp/${temporaryFilename}`
+    }).createReadStream();
+
+    const outputStream = S3.putObject({
+        Bucket: process.env.S3_BUCKET,
+        key: `tracks/${trackId}.mp3`
+    }).createWriteStream();
+    const convertToWav = sox({
+        output:{
+            rate: 44100,
+            channels: 1,
+            type: 'wav'
+        }
+    });
+    const convertToMp3 = sox({
+        output:{
+            rate: 44100,
+            channels: 2,
+            type: 'mp3'
+        }
+    });
+    const preview= new PreviewGenerator();
+    
+    inputStream.pipe(convertToWav).pipe(preview);
+    inputStream.pipe(convertToMp3).pipe(outputStream);
+
+    const onComplete = completeAudioProcess(preview, outputStream, temporaryFilename, trackId);
+    preview.on("end", onComplete);
+    outputStream.on("end", onComplete);
+    pool.release();
+    await pool.end();
+}
+
+function completeAudioProcess(preview, outputStream, temporaryFilename, trackId){
+    return ()=>{
+
+    };
+}
+
+
+//A class that buffers a .wav file's octets and generates a preview from them as they are streamed through
 class PreviewGenerator extends stream.Transform{
     constructor(options){
         super();
@@ -155,42 +200,10 @@ class PreviewGenerator extends stream.Transform{
         }
     }
 
-    
     _averageSubWindows(){
         return this._windows.reduce((accum, el)=> accum + el) /
             this._windowResolution / this._maxAmplitude;
     }
 }
-function generate_waveform(){
-    const convertToWav = sox({
-        output:{
-            rate: 44100,
-            channels: 1,
-            type: 'wav'
-        }
-    });
-    const convertToMp3 = sox({
-        output:{
-            rate: 44100,
-            channels: 2,
-            type: 'mp3'
-        }
-    });
-    const p= new PreviewGenerator();
-    const httpResponse = fs.createReadStream('sample.wav')
-    const output = fs.createWriteStream('sample.mp3');
-    httpResponse
-    .pipe(convertToWav)
-    .pipe(p)
 
-    httpResponse
-    .pipe(convertToMp3)
-    .pipe(output);
-
-    p.on('finish', ()=>{
-        debugger;
-        console.log(p.results)
-    });
-}
-generate_waveform();
 

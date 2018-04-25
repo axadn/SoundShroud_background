@@ -17,6 +17,7 @@
   },
   "homepage": "https://github.com/axadn/SoundShroud_background#readme",
   "dependencies": {
+    "aws-sdk": "^2.229.1",
     "pg": "^7.4.1",
     "sox-stream": "^2.0.1",
     "wav": "^1.0.1"
