@@ -8,6 +8,14 @@ const sox = require('sox-stream');
 const PREVIEW_RESOLUTION = 64;
 const POLL_FREQUENCY = 5000;
 
+const awsParams = {
+    accessKeyId: process.env.S3_ID,
+    secretAccessKey: process.env.S3_KEY
+};
+const S3 = new AWS.S3(awsParams);
+const SQS = new AWS.SQS(awsParams);
+let queueUrl;
+
 start(); 
 
 async function start(){
@@ -18,11 +26,19 @@ async function start(){
             process.env[pair[0]] = pair[1];
         });
     }
-    setInterval(poll, POLL_FREQUENCY);
+    SQS.getQueueUrl({QueueName: process.env.QUEUE_NAME ,
+        QueueOwnerAWSAccountId : process.env.AWS_ACCOUNT_ID},
+        (err,data)=>{
+            setInterval(()=>poll(data.QueueUrl), POLL_FREQUENCY);
+    });
 }
 
-async function poll(){
-    
+async function poll(queueUrl){
+    SQS.receiveMessage({
+
+    }, (err, data)=>{
+
+    });
 }
 
 /* Converting Audio / Generating a Preview:
@@ -39,10 +55,6 @@ async function poll(){
  */
 async function processAudio(temporaryFilename, trackId){
     const pool = await new Pool();
-    const S3 = new AWS.S3({
-        accessKeyId: process.env.S3_ID,
-        secretAccessKey: process.env.S3_KEY
-    });
     const inputStream = S3.getObject({
         Bucket: process.env.S3_BUCKET,
         key: `tracks/temp/${temporaryFilename}`
@@ -86,6 +98,8 @@ function completeAudioProcess(preview, outputStream, temporaryFilename, trackId)
 
 
 //A class that buffers a .wav file's octets and generates a preview from them as they are streamed through
+//this is dependent upon the output of sox-strem being consistent
+// if there are problems make sure the package version is locked to 2.0.1
 class PreviewGenerator extends stream.Transform{
     constructor(options){
         super();
