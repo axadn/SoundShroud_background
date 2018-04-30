@@ -8,36 +8,32 @@ const sox = require('sox-stream');
 const PREVIEW_RESOLUTION = 64;
 const POLL_FREQUENCY = 5000;
 
-const awsParams = {
-    accessKeyId: process.env.S3_ID,
-    secretAccessKey: process.env.S3_KEY
-};
-const S3 = new AWS.S3(awsParams);
-const SQS = new AWS.SQS(awsParams);
-let queueUrl;
-
 start(); 
 
 async function start(){
-    const secrets = fs.readFileSync('./secrets.config','utf8');
+        const secrets = fs.readFileSync('./secrets.config','utf8');
     if(secrets){
         secrets.split('\n').forEach(line=>{
             const pair = line.split("="); 
             process.env[pair[0]] = pair[1];
-        });
+        });{}
     }
-    SQS.getQueueUrl({QueueName: process.env.QUEUE_NAME ,
-        QueueOwnerAWSAccountId : process.env.AWS_ACCOUNT_ID},
+    const S3 = new AWS.S3({region: process.env.S3_REGION});
+    const SQS = new AWS.SQS({region: process.env.SQS_REGION});
+    SQS.getQueueUrl({QueueName: process.env.QUEUE_NAME},
         (err,data)=>{
-            setInterval(()=>poll(data.QueueUrl), POLL_FREQUENCY);
+            debugger;
+            poll(S3, SQS, data.QueueUrl);
+            //setInterval(()=>poll(data.QueueUrl), POLL_FREQUENCY);
     });
 }
 
-async function poll(queueUrl){
+async function poll(S3, SQS, QueueUrl){
+    debugger;
     SQS.receiveMessage({
-
+        QueueUrl
     }, (err, data)=>{
-
+        debugger;
     });
 }
 
