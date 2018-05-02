@@ -5,6 +5,7 @@ const wav = require('wav');
 const {Pool} = require('pg');
 const stream = require('stream');
 const sox = require('sox-stream');
+const s3Upload = require('s3-upload-stream');
 const PREVIEW_RESOLUTION = 64;
 const POLL_FREQUENCY = 5000;
 
@@ -22,14 +23,12 @@ async function start(){
     const SQS = new AWS.SQS({region: process.env.SQS_REGION});
     SQS.getQueueUrl({QueueName: process.env.QUEUE_NAME},
         (err,data)=>{
-            debugger;
             poll(S3, SQS, data.QueueUrl);
-            //setInterval(()=>poll(data.QueueUrl), POLL_FREQUENCY);
+           // setInterval(()=>poll(S3, SQS, data.QueueUrl), POLL_FREQUENCY);
     });
 }
 
 async function poll(S3, SQS, QueueUrl){
-    debugger;
     SQS.receiveMessage({
         QueueUrl,
         MessageAttributeNames: ["temporaryFilename", "trackId"]
@@ -37,8 +36,8 @@ async function poll(S3, SQS, QueueUrl){
         if(data.Messages){
             processAudio(
                 S3,
-                data.Messages[0].attrributes.temporaryFilename,
-                data.Messages[0].attributes.trackId
+                data.Messages[0].MessageAttributes.temporaryFilename.StringValue,
+                data.Messages[0].MessageAttributes.trackId.StringValue
             )
             .then(
                 SQS.deleteMessage({
@@ -64,16 +63,20 @@ async function poll(S3, SQS, QueueUrl){
  */
 async function processAudio(S3, temporaryFilename, trackId){
     const pool = await new Pool();
-    const inputStream = S3.getObject({
+    let inputStream = S3.getObject({
         Bucket: process.env.S3_BUCKET,
-        key: `tracks/temp/${temporaryFilename}`
+        Key: `tracks/temp/${temporaryFilename}`
     }).createReadStream();
-
-    const outputStream = S3.putObject({
+    const outputStream = s3Upload(S3).upload({
         Bucket: process.env.S3_BUCKET,
-        key: `tracks/${trackId}.mp3`
-    }).createWriteStream();
+        Key: `tracks/${trackId}.mp3`
+    });
+    let type = temporaryFilename.split(".");
+    type = type[type.length - 1];
     const convertToWav = sox({
+        input: {
+            type
+        },
         output:{
             rate: 44100,
             channels: 1,
@@ -81,6 +84,9 @@ async function processAudio(S3, temporaryFilename, trackId){
         }
     });
     const convertToMp3 = sox({
+        input:{
+            type
+        },
         output:{
             rate: 44100,
             channels: 2,
@@ -93,9 +99,9 @@ async function processAudio(S3, temporaryFilename, trackId){
     inputStream.pipe(convertToMp3).pipe(outputStream);
 
     return new Promise((resolve, reject)=>{
-        const onComplete = completeAudioProcess({S3, temporaryFilename, preview, trackId, pool})(resolve);
-        preview.on("finish",()=>{ onComplete = onComplete()});
-        outputStream.on("finish", ()=>{onComplete = onComplete()});
+        let onComplete = completeAudioProcess({S3, temporaryFilename, preview, trackId, pool})(resolve);
+        preview.on("finish",()=>{debugger; onComplete = onComplete()});
+        outputStream.on("uploaded", ()=>{ debugger; onComplete = onComplete()});
         destroyStreamsOnError([inputStream, convertToWav, convertToMp3, preview, outputStream])(reject);
     });
 }
@@ -103,15 +109,18 @@ async function processAudio(S3, temporaryFilename, trackId){
 const destroyStreamsOnError = streams => reject =>{
     streams.forEach(stream =>{
         stream.on("error", err=>{
+            debugger;
             streams.forEach(otherStream => otherStream.destroy(err));
             reject(err);
         });
     });
 }
 const completeAudioProcess = ({S3, temporaryFilename, trackId, preview, pool})=> resolve => stream1Ended => stream2Ended =>{
-    S3.deleteObject({Bucket: process.env.S3_BUCKET, key: `tracks/temp/${temporaryFilename}`}, (err, data) => {
+    debugger;
+    S3.deleteObject({Bucket: process.env.S3_BUCKET, Key: `tracks/temp/${temporaryFilename}`}, (err, data) => {
+        debugger;
         if(!err){
-            pool.query(`UPDATE Tracks SET processed = true, waveform = [${preview.results}] WHERE id = ${trackId};`)
+            pool.query(`UPDATE Tracks SET processed = true, waveform = ARRAY[${preview.results}] WHERE id = ${trackId};`)
             .then(() => resolve());
         }
     });

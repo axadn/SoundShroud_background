@@ -19,6 +19,7 @@
   "dependencies": {
     "aws-sdk": "^2.229.1",
     "pg": "^7.4.1",
+    "s3-upload-stream": "^1.0.7",
     "sox-stream": "^2.0.1",
     "wav": "^1.0.1"
   }
