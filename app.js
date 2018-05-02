@@ -16,7 +16,7 @@ async function start(){
         secrets.split('\n').forEach(line=>{
             const pair = line.split("="); 
             process.env[pair[0]] = pair[1];
-        });{}
+        });
     }
     const S3 = new AWS.S3({region: process.env.S3_REGION});
     const SQS = new AWS.SQS({region: process.env.SQS_REGION});
@@ -93,7 +93,7 @@ async function processAudio(S3, temporaryFilename, trackId){
     inputStream.pipe(convertToMp3).pipe(outputStream);
 
     return new Promise((resolve, reject)=>{
-        const onComplete = completeAudioProcess({temporaryFilename, trackId, pool})(resolve);
+        const onComplete = completeAudioProcess({S3, temporaryFilename, preview, trackId, pool})(resolve);
         preview.on("finish",()=>{ onComplete = onComplete()});
         outputStream.on("finish", ()=>{onComplete = onComplete()});
         destroyStreamsOnError([inputStream, convertToWav, convertToMp3, preview, outputStream])(reject);
@@ -108,8 +108,13 @@ const destroyStreamsOnError = streams => reject =>{
         });
     });
 }
-const completeAudioProcess = ({temporaryFilename, trackId, pool})=> resolve => stream1Ended => stream2Ended =>{
-    resolve();
+const completeAudioProcess = ({S3, temporaryFilename, trackId, preview, pool})=> resolve => stream1Ended => stream2Ended =>{
+    S3.deleteObject({Bucket: process.env.S3_BUCKET, key: `tracks/temp/${temporaryFilename}`}, (err, data) => {
+        if(!err){
+            pool.query(`UPDATE Tracks SET processed = true, waveform = [${preview.results}] WHERE id = ${trackId};`)
+            .then(() => resolve());
+        }
+    });
 } 
 
 
