@@ -31,9 +31,22 @@ async function start(){
 async function poll(S3, SQS, QueueUrl){
     debugger;
     SQS.receiveMessage({
-        QueueUrl
+        QueueUrl,
+        MessageAttributeNames: ["temporaryFilename", "trackId"]
     }, (err, data)=>{
-        debugger;
+        if(data.Messages){
+            processAudio(
+                S3,
+                data.Messages[0].attrributes.temporaryFilename,
+                data.Messages[0].attributes.trackId
+            )
+            .then(
+                SQS.deleteMessage({
+                    QueueUrl,
+                    ReceiptHandle: data.Messages[0].ReceiptHandle
+                })
+            );
+        }
     });
 }
 
@@ -49,7 +62,7 @@ async function poll(S3, SQS, QueueUrl){
  * we don't have to hold the whole file in memory at once
  * 
  */
-async function processAudio(temporaryFilename, trackId){
+async function processAudio(S3, temporaryFilename, trackId){
     const pool = await new Pool();
     const inputStream = S3.getObject({
         Bucket: process.env.S3_BUCKET,
@@ -79,18 +92,25 @@ async function processAudio(temporaryFilename, trackId){
     inputStream.pipe(convertToWav).pipe(preview);
     inputStream.pipe(convertToMp3).pipe(outputStream);
 
-    const onComplete = completeAudioProcess(preview, outputStream, temporaryFilename, trackId);
-    preview.on("end", onComplete);
-    outputStream.on("end", onComplete);
-    pool.release();
-    await pool.end();
+    return new Promise((resolve, reject)=>{
+        const onComplete = completeAudioProcess({temporaryFilename, trackId, pool})(resolve);
+        preview.on("finish",()=>{ onComplete = onComplete()});
+        outputStream.on("finish", ()=>{onComplete = onComplete()});
+        destroyStreamsOnError([inputStream, convertToWav, convertToMp3, preview, outputStream])(reject);
+    });
 }
 
-function completeAudioProcess(preview, outputStream, temporaryFilename, trackId){
-    return ()=>{
-
-    };
+const destroyStreamsOnError = streams => reject =>{
+    streams.forEach(stream =>{
+        stream.on("error", err=>{
+            streams.forEach(otherStream => otherStream.destroy(err));
+            reject(err);
+        });
+    });
 }
+const completeAudioProcess = ({temporaryFilename, trackId, pool})=> resolve => stream1Ended => stream2Ended =>{
+    resolve();
+} 
 
 
 //A class that buffers a .wav file's octets and generates a preview from them as they are streamed through
