@@ -7,10 +7,10 @@ const stream = require('stream');
 const sox = require('sox-stream');
 const s3Upload = require('s3-upload-stream');
 const PREVIEW_RESOLUTION = 64;
-const POLL_FREQUENCY = 5000;
+const POLL_FREQUENCY = 1000;
 
 start(); 
-
+let handle;
 async function start(){
         const secrets = fs.readFileSync('./secrets.config','utf8');
     if(secrets){
@@ -19,12 +19,15 @@ async function start(){
             process.env[pair[0]] = pair[1];
         });
     }
+    if(!process.env.PGPASSWORD){
+        process.env.PGPASSWORD = null;
+    }
     const S3 = new AWS.S3({region: process.env.S3_REGION});
     const SQS = new AWS.SQS({region: process.env.SQS_REGION});
     SQS.getQueueUrl({QueueName: process.env.QUEUE_NAME},
         (err,data)=>{
-            poll(S3, SQS, data.QueueUrl);
-           // setInterval(()=>poll(S3, SQS, data.QueueUrl), POLL_FREQUENCY);
+            //poll(S3, SQS, data.QueueUrl);
+            handle = setInterval(()=>poll(S3, SQS, data.QueueUrl), POLL_FREQUENCY);
     });
 }
 
@@ -62,6 +65,7 @@ async function poll(S3, SQS, QueueUrl){
  * 
  */
 async function processAudio(S3, temporaryFilename, trackId){
+    clearInterval(handle);
     const pool = await new Pool();
     let inputStream = S3.getObject({
         Bucket: process.env.S3_BUCKET,
@@ -94,14 +98,14 @@ async function processAudio(S3, temporaryFilename, trackId){
         }
     });
     const preview= new PreviewGenerator();
-    
+
     inputStream.pipe(convertToWav).pipe(preview);
     inputStream.pipe(convertToMp3).pipe(outputStream);
 
     return new Promise((resolve, reject)=>{
         let onComplete = completeAudioProcess({S3, temporaryFilename, preview, trackId, pool})(resolve);
-        preview.on("finish",()=>{debugger; onComplete = onComplete()});
-        outputStream.on("uploaded", ()=>{ debugger; onComplete = onComplete()});
+        preview.on("finish",()=>{let p = preview;debugger; onComplete = onComplete()});
+        outputStream.on("uploaded", ()=>{let w = convertToWav; let m = convertToMp3;    let p = preview; debugger; onComplete = onComplete()});
         destroyStreamsOnError([inputStream, convertToWav, convertToMp3, preview, outputStream])(reject);
     });
 }
@@ -130,7 +134,7 @@ const completeAudioProcess = ({S3, temporaryFilename, trackId, preview, pool})=>
 //A class that buffers a .wav file's octets and generates a preview from them as they are streamed through
 //this is dependent upon the output of sox-strem being consistent
 // if there are problems make sure the package version is locked to 2.0.1
-class PreviewGenerator extends stream.Transform{
+class PreviewGenerator extends stream.Writable{
     constructor(options){
         super();
         const defaults={
@@ -206,7 +210,7 @@ class PreviewGenerator extends stream.Transform{
             this.phase = "body";
         }
     }
-    _transform(data, encoding, callback){
+    _write(data, encoding, callback){
         for(let i = 0; i < data.length; ++i){
             if(this.phase == "body"){
                 this._readBody(data[i]);
@@ -216,6 +220,13 @@ class PreviewGenerator extends stream.Transform{
             }
         }
         callback(null, data);
+    }
+    _final(callback){
+        debugger;
+        if(this._resultIdx < this._resolution){
+            this.results[this._resultIdx] = 0;  
+        }
+        callback();
     }
     _readBody(octet){
         if(this._octetNum === undefined){
